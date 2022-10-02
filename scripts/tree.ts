@@ -92,7 +92,6 @@ await helpers.impersonateAccount(address10);
   console.log("Whitelist Address successfully deployed >>>>>>>", list.address);
 
   const listed = await ethers.getContractAt("IWhitelist", list.address);
-//   const Bet =  await Staking.connect(Signer).stake(amountOut);
 
 const leaf = keccak256(addressList[0]);
 const proof = merkleTree.getHexProof(leaf);
@@ -100,7 +99,6 @@ console.log("Merkle tree proof ==================================", proof);
 
 
 let verifiedList = await listed.checkInWhitelist(proof, 2);
-// await verifiedList.wait();
 console.log("VERIFIED LIST: ", verifiedList);
 
 let minted = await listed.safeMint(proof, 2);

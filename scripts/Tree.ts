@@ -1,16 +1,16 @@
 import { ethers } from "hardhat";
 const helpers = require("@nomicfoundation/hardhat-network-helpers");
-
 const keccak256 = require("keccak256");
 const { MerkleTree } = require("merkletreejs");
 const csv = require("csv-parser");
 const fs = require("fs");
 // var utils = require("ethers").utils;
-const Web3 = require("web3");
+import "@nomiclabs/hardhat-web3";
+// const Web3 = require("web3");
 
 
     // create web3 instance (no provider needed)
-    var web3 = new Web3();
+    // var web3 = new Web3();
     let root;
 
     ///files for each ardrop
@@ -35,42 +35,64 @@ async function main() {
      fs.createReadStream(filename)
      .pipe(csv())
      .on("data", (row:any) => {
-       const user_dist = [row["user_address"], row["amount"]]; // create record to track user_id of leaves
-       const leaf_hash = utils.solidityKeccak256(
-         ["address", "uint256"],
-         [row["user_address"], row["amount"]]
-       ); // encode base data like solidity abi.encode
+       const user_dist:any[] = [row["user_address"], row["amount"]]; // create record to track user_id of leaves
+      //  console.log("user_dist    >>>>>>>>>>>>>>>>>>>>>>", user_dist);
+       const leaf_hash:string = ethers.utils.solidityKeccak256(["address", "uint256"], [row["user_address"], row["amount"]] ); // encode base data like solidity abi.encode
        user_dist_list.push(user_dist); // add record to index tracker
        token_dist.push(leaf_hash); // add leaf hash to distribution
+       
      })
      .on("end", () => {
+      // console.log(">>>>>>>>>>>>>>>>>>>>>>", user_dist_list);
        // create merkle tree from token distribution
-       const merkle_tree = new MerkleTree(token_dist, keccak256, {
+       const merkle_tree:any = new MerkleTree(token_dist, keccak256, {
          sortPairs: true,
        });
        // get root of our tree
        root = merkle_tree.getHexRoot();
+      //  console.log("root >>>>>>>>>>>>>>>>>>>>>>", root);
        // create proof file
        write_leaves(merkle_tree, user_dist_list, token_dist, root);
      });
 
             // write leaves & proofs to json file
-  function write_leaves(merkle_tree, user_dist_list, token_dist, root) {
+   async function write_leaves(merkle_tree:string, user_dist_list:any, token_dist:any, root:string) {
+      
     console.log("Begin writing leaves to file...");
     let full_dist = {} as any;
     let full_user_claim = {} as any;
-    for (line = 0; line < user_dist_list.length; line++) {
-      // generate leaf hash from raw data
-      const leaf = token_dist[line];
 
+        //  Deploying my contract
+        const Whitelist = await ethers.getContractFactory("Whitelist");
+        const whitelist = await Whitelist.deploy(root);
+        const  list = await whitelist.deployed();
+        console.log("Whitelist Address successfully deployed >>>>>>>", list.address);
+        const listed = await ethers.getContractAt("IWhitelist", list.address);
+
+
+    for (let line = 0; line < user_dist_list.length; line++) {
+      // generate leaf hash from raw data
+      const leaf:any[] = token_dist[line];
+      // console.log("leaf ======================================", leaf)
+      const proof:any[] = merkle_tree.getHexProof(leaf);
+      // console.log("proof >>>>>>>>>>>>>>>>>>>>>>>", proof);
+      
       // create dist object
       const user_dist = {
         leaf: leaf,
-        proof: merkle_tree.getHexProof(leaf),
+        proof: proof,
       };
+
       // add record to our distribution
       full_dist[user_dist_list[line][0]] = user_dist;
+      let verifiedList = await listed.checkInWhitelist(proof, 2);
+      console.log("VERIFIED LIST: ", verifiedList);
+      
+      let minted = await listed.safeMint(proof, 2);
+      await minted.wait();
+      console.log("MINTED Token: ", minted);
     }
+    
 
     fs.writeFile(output_file, JSON.stringify(full_dist, null, 4), (err:any) => {
         if (err) {
@@ -85,10 +107,9 @@ async function main() {
             merkleroot: root,
           },
         };
-      
-        for (line = 0; line < user_dist_list.length; line++) {
+
+        for (let line = 0; line < user_dist_list.length; line++) {
           const other = user_dist_list[line];
-          // console.log(gotchi_dist_list[line])
           const user_claim = {
             address: other[0],
             itemID: other[1],
@@ -111,3 +132,10 @@ async function main() {
     }
 
 }
+
+// We recommend this pattern to be able to use async/await everywhere
+// and properly handle errors.
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
